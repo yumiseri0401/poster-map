@@ -1,0 +1,58 @@
+name: Build data (CSV -> JSON)
+
+on:
+  workflow_dispatch:        # 【注釈】手動実行
+  push:
+    paths:
+      - 'public/data/all.csv'
+      - 'arealist.csv'
+      - '.github/workflows/build-data.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install deps
+        run: pip install -r python-requirements.txt
+
+      - name: Generate JSON from all.csv
+        run: |
+          python csv2json_small.py public/data/all.csv public/data/
+          python summarize_progress.py public/data/
+          python summarize_progress_absolute.py public/data/
+
+      - name: Generate arealist.json from arealist.csv
+        run: |
+          python - <<'PY'
+          import csv, json, pathlib
+          src = 'arealist.csv'
+          out = pathlib.Path('public/data/arealist.json')
+          items = []
+          with open(src, encoding='utf-8') as f:
+            for row in csv.reader(f):
+              if not row or row[0].startswith('#'):
+                continue
+              key = row[0].strip()
+              label = (row[1].strip() if len(row) > 1 else key)
+              items.append({"key": key, "label": label})
+          out.parent.mkdir(parents=True, exist_ok=True)
+          with open(out, 'w', encoding='utf-8') as f:
+            json.dump(items, f, ensure_ascii=False, indent=2)
+          PY
+
+      - name: Commit & Push JSON
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data/*.json
+          git commit -m "Auto-generate JSON from CSV" || echo "No changes to commit"
+          git push
